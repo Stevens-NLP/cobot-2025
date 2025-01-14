@@ -2,8 +2,15 @@ from groq import Groq
 from datetime import datetime
 current_datetime = datetime.now()
 current_datetime = current_datetime.strftime("%Y-%m-%d %H:%M:%S")
+import json
+
+f = open('creds.json')
+data = json.load(f)
+api_key = data["groq_api"]
+f.close()
+
 client = Groq(
-        api_key="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",
+        api_key=api_key,
     )
 def QuestionClassification(input_text):
 

@@ -10,6 +10,13 @@ from io import BytesIO
 import streamlit as st
 import matplotlib.pyplot as plt
 import networkx as nx
+import speech_recognition as sr
+from RealtimeSTT import AudioToTextRecorder
+import TTS
+recorder = AudioToTextRecorder(spinner=False, model="large-v2", language="en", ensure_sentence_ends_with_period=True, 
+                                   enable_realtime_transcription=True, silero_deactivity_detection = True)
+
+
 st.set_page_config(layout="wide")
 st.title("COBOT")
 st.sidebar.title("Chat History")
@@ -106,6 +113,7 @@ col1, col2 = st.columns([2,1])
 data2 = np.random.randn(100)
 with col1:
     with st.form(key="my_form"):
+        recordedText = recorder.text()
         st.text_area('Type anything',key = "input")
         st.form_submit_button("Submit", on_click=route)
 with col2:
