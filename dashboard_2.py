@@ -1,171 +1,80 @@
 import logging
 import logging.handlers
 import queue
-import threading
 import time
-import urllib.request
 import os
-from collections import deque
-from pathlib import Path
-from typing import List
-
-import av
+import groq_v1 as gq
+import json
 import numpy as np
 import pydub
 import streamlit as st
-from twilio.rest import Client
 from transformers import pipeline
-transcriber = pipeline("automatic-speech-recognition", model="openai/whisper-base.en")
-from streamlit_webrtc import WebRtcMode, webrtc_streamer
+from streamlit_lottie import st_lottie 
 
-HERE = Path(__file__).parent
+from streamlit_webrtc import WebRtcMode, webrtc_streamer
 
 logger = logging.getLogger(__name__)
 
 
-# This code is based on https://github.com/streamlit/demo-self-driving/blob/230245391f2dda0cb464008195a470751c01770b/streamlit_app.py#L48  # noqa: E501
-def download_file(url, download_to: Path, expected_size=None):
-    # Don't download the file twice.
-    # (If possible, verify the download using the file length.)
-    if download_to.exists():
-        if expected_size:
-            if download_to.stat().st_size == expected_size:
-                return
-        else:
-            st.info(f"{url} is already downloaded.")
-            if not st.button("Download again?"):
-                return
-
-    download_to.parent.mkdir(parents=True, exist_ok=True)
-
-    # These are handles to two visual elements to animate.
-    weights_warning, progress_bar = None, None
-    try:
-        weights_warning = st.warning("Downloading %s..." % url)
-        progress_bar = st.progress(0)
-        with open(download_to, "wb") as output_file:
-            with urllib.request.urlopen(url) as response:
-                length = int(response.info()["Content-Length"])
-                counter = 0.0
-                MEGABYTES = 2.0 ** 20.0
-                while True:
-                    data = response.read(8192)
-                    if not data:
-                        break
-                    counter += len(data)
-                    output_file.write(data)
-
-                    # We perform animation by overwriting the elements.
-                    weights_warning.warning(
-                        "Downloading %s... (%6.2f/%6.2f MB)"
-                        % (url, counter / MEGABYTES, length / MEGABYTES)
-                    )
-                    progress_bar.progress(min(counter / length, 1.0))
-    # Finally, we remove these visual elements by calling .empty().
-    finally:
-        if weights_warning is not None:
-            weights_warning.empty()
-        if progress_bar is not None:
-            progress_bar.empty()
+@st.cache_data  
+def get_model():
+    transcriber = pipeline("automatic-speech-recognition", model="openai/whisper-large-v3-turbo")
+    return transcriber
 
 
-# This code is based on https://github.com/whitphx/streamlit-webrtc/blob/c1fe3c783c9e8042ce0c95d789e833233fd82e74/sample_utils/turn.py
-@st.cache_data  # type: ignore
-def get_ice_servers():
-    """Use Twilio's TURN server because Streamlit Community Cloud has changed
-    its infrastructure and WebRTC connection cannot be established without TURN server now.  # noqa: E501
-    We considered Open Relay Project (https://www.metered.ca/tools/openrelay/) too,
-    but it is not stable and hardly works as some people reported like https://github.com/aiortc/aiortc/issues/832#issuecomment-1482420656  # noqa: E501
-    See https://github.com/whitphx/streamlit-webrtc/issues/1213
+def main(transcriber):
+    app_sst(transcriber)
+
+
+def is_silent(audio_chunk, threshold=0.01):
     """
+    Determine if the audio chunk is silent.
+    Args:
+        audio_chunk (np.ndarray): The audio data as a NumPy array.
+        threshold (float): Energy threshold for silence detection.
+    Returns:
+        bool: True if the audio is silent, False otherwise.
+    """
+    energy = np.sqrt(np.mean(audio_chunk ** 2))  # RMS energy
+    return energy < threshold
 
-    # Ref: https://www.twilio.com/docs/stun-turn/api
-    try:
-        account_sid = os.environ["TWILIO_ACCOUNT_SID"]
-        auth_token = os.environ["TWILIO_AUTH_TOKEN"]
-    except KeyError:
-        logger.warning(
-            "Twilio credentials are not set. Fallback to a free STUN server from Google."  # noqa: E501
-        )
-        return [{"urls": ["stun:stun.l.google.com:19302"]}]
-
-    client = Client(account_sid, auth_token)
-
-    token = client.tokens.create()
-
-    return token.ice_servers
-
-
-
-def main():
-    st.header("Real Time Speech-to-Text")
-    st.markdown(
-        """
-This demo app is using [DeepSpeech](https://github.com/mozilla/DeepSpeech),
-an open speech-to-text engine.
-
-A pre-trained model released with
-[v0.9.3](https://github.com/mozilla/DeepSpeech/releases/tag/v0.9.3),
-trained on American English is being served.
-"""
+def app_sst(transcriber):
+    st.title("ALEXA")
+    path = "./animations/chatbot_animation_3.json"
+    with open(path,"r") as file: 
+        url = json.load(file) 
+    st_lottie(url, 
+        reverse=True, 
+        height=400, 
+        width=400, 
+        speed=1, 
+        loop=True, 
+        quality='high', 
+        key='bot'
     )
-
-    # https://github.com/mozilla/DeepSpeech/releases/tag/v0.9.3
-    MODEL_URL = "https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.pbmm"  # noqa
-    LANG_MODEL_URL = "https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.scorer"  # noqa
-    MODEL_LOCAL_PATH = HERE / "models/deepspeech-0.9.3-models.pbmm"
-    LANG_MODEL_LOCAL_PATH = HERE / "models/deepspeech-0.9.3-models.scorer"
-
-    download_file(MODEL_URL, MODEL_LOCAL_PATH, expected_size=188915987)
-    download_file(LANG_MODEL_URL, LANG_MODEL_LOCAL_PATH, expected_size=953363776)
-
-    lm_alpha = 0.931289039105002
-    lm_beta = 1.1834137581510284
-    beam = 100
-
-    sound_only_page = "Sound only (sendonly)"
-
-    app_mode = st.selectbox("Choose the app mode", [sound_only_page])
-
-    if app_mode == sound_only_page:
-        app_sst(
-            str(MODEL_LOCAL_PATH), str(LANG_MODEL_LOCAL_PATH), lm_alpha, lm_beta, beam
-        )
-
-
-
-def app_sst(model_path: str, lm_path: str, lm_alpha: float, lm_beta: float, beam: int):
     webrtc_ctx = webrtc_streamer(
         key="speech-to-text",
         mode=WebRtcMode.SENDONLY,
         audio_receiver_size=1024,
-        rtc_configuration={"iceServers": get_ice_servers()},
+        # rtc_configuration={"iceServers": get_ice_servers()},
         media_stream_constraints={"video": False, "audio": True},
     )
-
+    print("Starting the model")
     status_indicator = st.empty()
 
     if not webrtc_ctx.state.playing:
         return
-
     status_indicator.write("Loading...")
     text_output = st.empty()
-    stream = None
+    response = st.empty()
     audio_buffer = np.array([], dtype=np.float32)
+    silent = None
+    query_complete = False
     while True:
+        if query_complete:
+            time.sleep(1)
+            continue
         if webrtc_ctx.audio_receiver:
-            # if stream is None:
-            #     from deepspeech import Model
-
-            #     model = Model(model_path)
-            #     model.enableExternalScorer(lm_path)
-            #     model.setScorerAlphaBeta(lm_alpha, lm_beta)
-            #     model.setBeamWidth(beam)
-
-            #     stream = model.createStream()
-
-            #     status_indicator.write("Model loaded.")
-
             sound_chunk = pydub.AudioSegment.empty()
             try:
                 audio_frames = webrtc_ctx.audio_receiver.get_frames(timeout=1)
@@ -174,8 +83,9 @@ def app_sst(model_path: str, lm_path: str, lm_alpha: float, lm_beta: float, beam
                 status_indicator.write("No frame arrived.")
                 continue
 
-            status_indicator.write("Running. Say something!")
-
+            # status_indicator.write("Running. Say something!")
+            # print(len(audio_frames))
+            
             for audio_frame in audio_frames:
                 sound = pydub.AudioSegment(
                     data=audio_frame.to_ndarray().tobytes(),
@@ -184,10 +94,22 @@ def app_sst(model_path: str, lm_path: str, lm_alpha: float, lm_beta: float, beam
                     channels=len(audio_frame.layout.channels),
                 )
                 sound_chunk += sound
-
+            # print(sound_chunk)
             if len(sound_chunk) > 0:
                 sound_chunk = sound_chunk.set_channels(1).set_frame_rate(16000)  # Whisper expects 16kHz mono audio
                 new_samples  = np.array(sound_chunk.get_array_of_samples(), dtype=np.float32) / 32768.0  # Normalize to [-1, 1]
+                
+                if is_silent(new_samples):
+                    # print("Silent",time.time() - silent)
+                    if silent is not None and (time.time() - silent) > 2:
+                        print("Stop recording here")
+                        silent = None
+                        query_complete = True
+                    else:
+                        continue
+                else:
+                    silent = time.time()
+                    # print("**Status:** Silent frame detected.")
                 audio_buffer = np.concatenate([audio_buffer, new_samples])
                 # Transcribe using Whisper
                 max_length = 16000 * 30
@@ -198,29 +120,29 @@ def app_sst(model_path: str, lm_path: str, lm_alpha: float, lm_beta: float, beam
                 try:
                     result = transcriber({"sampling_rate": 16000, "raw": audio_buffer})
                     text = result["text"]
+                    # print(text)
                     text_output.markdown(f"**Text:** {text}")
+                    if query_complete:
+                        print("Query Complete")
+                        #call the main LLM
+                        llm_response = gq.generate_content(text)
+                        # print(llm_response)
+                        response.markdown("Response : {}".format(llm_response))
+                        query_complete = False
+                        audio_buffer = np.array([], dtype=np.float32)
+
                 except ValueError as e:
                     text_output.markdown(f"**Error during transcription:** {e}")
-                # Output the transcription
-                # text_output.markdown(f"**Text:** {text}")
-                # sound_chunk = sound_chunk.set_channels(1).set_frame_rate(
-                #     model.sampleRate()
-                # )
-                # buffer = np.array(sound_chunk.get_array_of_samples())
-                # stream.feedAudioContent(buffer)
-                # text = stream.intermediateDecode()
-                # text_output.markdown(f"**Text:** {text}")
         else:
             status_indicator.write("AudioReciver is not set. Abort.")
             break
 
 
 
-
+transcriber = get_model()
 
 if __name__ == "__main__":
     import os
-
     DEBUG = os.environ.get("DEBUG", "false").lower() not in ["false", "no", "0"]
 
     logging.basicConfig(
@@ -237,4 +159,4 @@ if __name__ == "__main__":
     fsevents_logger = logging.getLogger("fsevents")
     fsevents_logger.setLevel(logging.WARNING)
 
-    main()
+    main(transcriber)

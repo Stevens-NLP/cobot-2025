@@ -62,7 +62,7 @@ def generate_content(input_text):
         messages=[
             {
                 "role": "system",
-                "content": "Your name is SKY.",
+                "content": "Your name is Alexa. you are an assistant which provides a short answer to user question",
             },
             {
                 "role": "system",
