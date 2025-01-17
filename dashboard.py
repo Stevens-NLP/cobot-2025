@@ -3,12 +3,9 @@ import logging.handlers
 import queue
 import time
 import os
-import base64
-from TTS.api import TTS
 import groq_v1 as gq
 import json
 import numpy as np
-import wave
 import pydub
 import streamlit as st
 from transformers import pipeline
@@ -25,8 +22,8 @@ def get_model():
     return transcriber
 
 
-def main(transcriber,tts):
-    app_sst(transcriber,tts)
+def main(transcriber):
+    app_sst(transcriber)
 
 
 def is_silent(audio_chunk, threshold=0.01):
@@ -41,14 +38,24 @@ def is_silent(audio_chunk, threshold=0.01):
     energy = np.sqrt(np.mean(audio_chunk ** 2))  # RMS energy
     return energy < threshold
 
-
-def app_sst(transcriber,tts):
+def app_sst(transcriber):
     st.title("ALEXA")
-
+    # path = "./animations/chatbot_animation_3.json"
+    # with open(path,"r") as file: 
+    #     url = json.load(file) 
+    # st_lottie(url, 
+    #     reverse=True, 
+    #     height=400, 
+    #     width=400, 
+    #     speed=1, 
+    #     loop=True, 
+    #     quality='high', 
+    #     key='bot'
+    # )
     webrtc_ctx = webrtc_streamer(
         key="speech-to-text",
         mode=WebRtcMode.SENDONLY,
-        audio_receiver_size=4096,
+        audio_receiver_size=1024,
         # rtc_configuration={"iceServers": get_ice_servers()},
         media_stream_constraints={"video": False, "audio": True},
     )
@@ -57,18 +64,15 @@ def app_sst(transcriber,tts):
 
     if not webrtc_ctx.state.playing:
         return
-    # status_indicator.write("Loading...")
+    status_indicator.write("Loading...")
     text_output = st.empty()
     response = st.empty()
     audio_buffer = np.array([], dtype=np.float32)
     silent = None
     query_complete = False
-    last_time = time.time()
-    speaking_duration = 0
     while True:
-        if query_complete or (time.time() - last_time) < speaking_duration:
-            audio_buffer = np.array([], dtype=np.float32)
-            time.sleep(0.5)
+        if query_complete:
+            time.sleep(1)
             continue
         if webrtc_ctx.audio_receiver:
             sound_chunk = pydub.AudioSegment.empty()
@@ -97,7 +101,7 @@ def app_sst(transcriber,tts):
                 
                 if is_silent(new_samples):
                     # print("Silent",time.time() - silent)
-                    if silent is not None and (time.time() - silent) > 0.5:
+                    if silent is not None and (time.time() - silent) > 2:
                         print("Stop recording here")
                         silent = None
                         query_complete = True
@@ -118,37 +122,15 @@ def app_sst(transcriber,tts):
                     text = result["text"]
                     # print(text)
                     text_output.markdown(f"**Text:** {text}")
-                    print(speaking_duration,time.time() - last_time)
                     if query_complete:
                         print("Query Complete")
                         #call the main LLM
                         llm_response = gq.generate_content(text)
                         # print(llm_response)
                         response.markdown("Response : {}".format(llm_response))
-                        tts.tts_to_file(text=llm_response, file_path="output_audio.wav")
                         query_complete = False
                         audio_buffer = np.array([], dtype=np.float32)
-                        try:
-                            with wave.open("./output_audio.wav", "rb") as audio_file:
-                                n_frames = audio_file.getnframes()
-                                frame_rate = audio_file.getframerate()
-                                speaking_duration = n_frames / float(frame_rate)
-                                speaking_duration = speaking_duration+2
-                            with open("./output_audio.wav", "rb") as audio_file:
-                                audio_bytes = audio_file.read()
-                                base64_audio = base64.b64encode(audio_bytes).decode("utf-8")
-                                # Use custom HTML to autoplay the .wav file
-                                
-                                audio_html = f"""
-                                <audio autoplay>
-                                    <source src="data:audio/wav;base64,{base64_audio}" type="audio/wav">
-                                    Your browser does not support the audio element.
-                                </audio>
-                                """
-                                last_time = time.time()
-                            st.markdown(audio_html, unsafe_allow_html=True)
-                        except FileNotFoundError:
-                            st.error("Audio file not found. Please check the path.")
+
                 except ValueError as e:
                     text_output.markdown(f"**Error during transcription:** {e}")
         else:
@@ -156,13 +138,8 @@ def app_sst(transcriber,tts):
             break
 
 
-if "transcriber" not in st.session_state:
-    transcriber = get_model()
-    st.session_state.transcriber = transcriber
 
-if 'tts' not in st.session_state:
-    tts = TTS("tts_models/en/ljspeech/tacotron2-DDC", gpu=True)
-    st.session_state.tts = tts
+transcriber = get_model()
 
 if __name__ == "__main__":
     import os
@@ -182,4 +159,4 @@ if __name__ == "__main__":
     fsevents_logger = logging.getLogger("fsevents")
     fsevents_logger.setLevel(logging.WARNING)
 
-    main(st.session_state.transcriber,st.session_state.tts)
+    main(transcriber)
