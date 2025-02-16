@@ -1,33 +1,29 @@
 import torch
 from TTS.api import TTS
 
-# Get device
-device = "cuda" if torch.cuda.is_available() else "cpu"
+# # tts = TTS(model_name="tts_models/en/ljspeech/tacotron2-DDC", progress_bar=True, gpu=True)
+tts = TTS(model_name="tts_models/en/jenny/jenny", progress_bar=True, gpu=True)
+# tts = TTS(model_name="tts_models/en/ljspeech/vits", progress_bar=True, gpu=True)
 
-# List available 🐸TTS models
-print(TTS().list_models())
+print(tts.speakers)
+print(tts.languages)
+# speakers = ['female-en-5', 'female-en-5', 'female-pt-4', 'male-en-2', 'male-en-2', 'male-pt-3']
+# Generate speech
 
-# # Initialize TTS
-# tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+text = '''
+India, the seventh-largest country in the world, is a vibrant and diverse nation located in South Asia. Known as the world's largest democracy, it is home to over 1.4 billion people, making it the second-most populous country. India's rich cultural heritage is reflected in its many languages, religions, festivals, and cuisines. From the snow-capped Himalayas in the north to the tropical beaches of the south, India's geography is as varied as its culture. It is a land of ancient history, boasting landmarks such as the Taj Mahal, while also being a hub for modern technological and economic growth.
+'''
 
-# # List speakers
-# print(tts.speakers)
+tts.tts_to_file(
+    text=text, 
+    file_path="output_tortoise.wav",
+    # language="en",
+    # speaker=tts.speakers[2],  # Specify speaker index for multi-speaker models
+    emotion="happy" # Optional: Set emotion (if supported)
+)
 
-# # Run TTS
-# # ❗ XTTS supports both, but many models allow only one of the `speaker` and
-# # `speaker_wav` arguments
+# from TTS.utils.manage import ModelManager
 
-# # TTS with list of amplitude values as output, clone the voice from `speaker_wav`
-# # wav = tts.tts(
-# #   text="Hello world!",
-# #   speaker_wav="my/cloning/audio.wav",
-# #   language="en"
-# # )
-
-# # # TTS to a file, use a preset speaker
-# # tts.tts_to_file(
-# #   text="Hello world!",
-# #   speaker="Craig Gutsy",
-# #   language="en",
-# #   file_path="output.wav"
-# # ) 
+# manager = ModelManager()
+# models = manager.list_models()
+# print("\n".join(models))

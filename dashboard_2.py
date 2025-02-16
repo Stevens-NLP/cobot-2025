@@ -29,7 +29,7 @@ def main(transcriber,tts):
     app_sst(transcriber,tts)
 
 
-def is_silent(audio_chunk, threshold=0.01):
+def is_silent(audio_chunk, threshold=0.04):
     """
     Determine if the audio chunk is silent.
     Args:
@@ -68,7 +68,7 @@ def app_sst(transcriber,tts):
     while True:
         if query_complete or (time.time() - last_time) < speaking_duration:
             audio_buffer = np.array([], dtype=np.float32)
-            time.sleep(0.5)
+            time.sleep(0.3)
             continue
         if webrtc_ctx.audio_receiver:
             sound_chunk = pydub.AudioSegment.empty()
@@ -97,7 +97,7 @@ def app_sst(transcriber,tts):
                 
                 if is_silent(new_samples):
                     # print("Silent",time.time() - silent)
-                    if silent is not None and (time.time() - silent) > 0.5:
+                    if silent is not None and (time.time() - silent) > 1:
                         print("Stop recording here")
                         silent = None
                         query_complete = True
@@ -133,7 +133,7 @@ def app_sst(transcriber,tts):
                                 n_frames = audio_file.getnframes()
                                 frame_rate = audio_file.getframerate()
                                 speaking_duration = n_frames / float(frame_rate)
-                                speaking_duration = speaking_duration+2
+                                speaking_duration = speaking_duration+3
                             with open("./output_audio.wav", "rb") as audio_file:
                                 audio_bytes = audio_file.read()
                                 base64_audio = base64.b64encode(audio_bytes).decode("utf-8")
@@ -161,7 +161,8 @@ if "transcriber" not in st.session_state:
     st.session_state.transcriber = transcriber
 
 if 'tts' not in st.session_state:
-    tts = TTS("tts_models/en/ljspeech/tacotron2-DDC", gpu=True)
+    # tts = TTS("tts_models/en/ljspeech/tacotron2-DDC", gpu=True)
+    tts = TTS(model_name="tts_models/en/jenny/jenny", progress_bar=True, gpu=True)
     st.session_state.tts = tts
 
 if __name__ == "__main__":
