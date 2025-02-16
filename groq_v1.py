@@ -55,25 +55,21 @@ def generate_google_search_query(input_text):
     return chat_completion.choices[0].message.content
 
 
-def generate_content(input_text):
-
-
+def generate_content(conv):
+    messages_1=[
+                {
+                    "role": "system",
+                    "content": "Your name is Alexa. you are an assistant which provides a short answer to user question",
+                },
+                {
+                    "role": "system",
+                    "content": "today's date and time is "+current_datetime,
+                }
+            ]
+    for i in conv:
+        messages_1.append(i)
     chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": "Your name is Alexa. you are an assistant which provides a short answer to user question",
-            },
-            {
-                "role": "system",
-                "content": "today's date and time is "+current_datetime,
-            },
-            {
-                "role": "user",
-                "content": input_text,
-            }
-            
-        ],
+        messages = messages_1,
         max_tokens=200,
         model="llama3-70b-8192",
     )

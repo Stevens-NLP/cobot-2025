@@ -43,6 +43,7 @@ def is_silent(audio_chunk, threshold=0.04):
 
 
 def app_sst(transcriber,tts):
+    conv = []
     st.title("ALEXA")
 
     webrtc_ctx = webrtc_streamer(
@@ -122,8 +123,13 @@ def app_sst(transcriber,tts):
                     if query_complete:
                         print("Query Complete")
                         #call the main LLM
-                        llm_response = gq.generate_content(text)
+                        if len(conv) > 10:
+                            conv.pop(0)
+                            conv.pop(0)
+                        conv.append({"role": "user","content": text})
+                        llm_response = gq.generate_content(conv)
                         # print(llm_response)
+                        conv.append({"role": "assistant","content": llm_response})
                         response.markdown("Response : {}".format(llm_response))
                         tts.tts_to_file(text=llm_response, file_path="output_audio.wav")
                         query_complete = False
