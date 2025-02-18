@@ -59,7 +59,7 @@ def generate_content(conv):
     messages_1=[
                 {
                     "role": "system",
-                    "content": "Your name is Alexa. you are an assistant which provides a short answer to user question",
+                    "content": "Your name is Alexa. you are an voice assistant which provides a short answer to user question. Do not provide answer which is greater than 50 words.",
                 },
                 {
                     "role": "system",

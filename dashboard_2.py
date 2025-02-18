@@ -13,11 +13,17 @@ import pydub
 import streamlit as st
 from transformers import pipeline
 from streamlit_lottie import st_lottie 
-
+import canvas
 from streamlit_webrtc import WebRtcMode, webrtc_streamer
 
 logger = logging.getLogger(__name__)
 
+def actions(text):
+    if "message" in text or "messages" in text:
+        messages,num_messages = canvas.get_messages()
+        return str(messages) + "Total Messages : "+str(num_messages)
+    else:
+        return ""
 
 @st.cache_data  
 def get_model():
@@ -122,6 +128,9 @@ def app_sst(transcriber,tts):
                     print(speaking_duration,time.time() - last_time)
                     if query_complete:
                         print("Query Complete")
+                        action_response = actions(text)
+                        if action_response != "":
+                            text = text+" "+ action_response
                         #call the main LLM
                         if len(conv) > 10:
                             conv.pop(0)
